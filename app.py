@@ -108,8 +108,8 @@ if not data.empty:
     if selected_month != "All":
         filtered = data[data["Date"].dt.strftime("%B %Y") == selected_month]
     else:
-        filtered = data
-    st.dataframe(filtered.sort_values("Date", ascending=False).reset_index(drop=True))
+        filtered = data[data["Date"].notna() & (data["Date"] >= (today - pd.Timedelta(days=10)))]
+st.dataframe(filtered.sort_values("Date", ascending=False))
     if st.checkbox("Show All Events"):
         st.dataframe(events)
 else:
