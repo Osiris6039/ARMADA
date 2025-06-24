@@ -55,7 +55,7 @@ if not st.session_state.authenticated:
     st.stop()
 
 # Load data
-data = pd.read_csv(data_file, parse_dates=["Date"])
+data = pd.read_csv(data_file)
 data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
 events = pd.read_csv(event_file)
 today = pd.Timestamp.today().normalize()
