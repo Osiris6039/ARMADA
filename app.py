@@ -510,7 +510,7 @@ def create_sample_data_if_empty():
 
         # Introduce some patterns
         for i, date in enumerate(dates):
-            if date.dayofweek >= 5: # Saturday or Sunday
+            if date.weekday() >= 5: # Saturday or Sunday
                 sales[i] = sales[i] * 1.2
                 customers[i] = customers[i] * 1.2
             if weather[i] == 'Rainy':
@@ -702,9 +702,8 @@ with tab1:
         st.dataframe(display_data.sort_values('Date', ascending=False)) # Display latest 7 at top
         
         st.subheader("Edit/Delete Records")
-        # Prepare the list for the selectbox first
-        unique_dates_for_selectbox = st.session_state.sales_data['Date'].dt.strftime('%Y-%m-%d').unique().tolist()
-        unique_dates_for_selectbox.sort(reverse=True) # Sort descending for most recent first
+        # Prepare the list for the selectbox first, ensuring it's always from the clean data
+        unique_dates_for_selectbox = sorted(st.session_state.sales_data['Date'].dt.strftime('%Y-%m-%d').unique().tolist(), reverse=True)
 
         # Only display the selectbox and form if there are dates to select
         if unique_dates_for_selectbox:
@@ -714,14 +713,15 @@ with tab1:
                 key='edit_delete_selector'
             )
 
-            # Proceed only if a date is selected (which it will be if unique_dates_for_selectbox is not empty)
+            # Retrieve the selected row using the selected date string
+            # It's crucial to convert the selected string back to datetime for comparison
             selected_row_df = st.session_state.sales_data[
                 st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_for_edit_delete)
             ]
             
-            # This check should ideally always be true if selected_date_for_edit_delete comes from unique_dates_for_selectbox
+            # This check should always be true now, as unique_dates_for_selectbox is derived from sales_data
             if not selected_row_df.empty: 
-                selected_row = selected_row_df.iloc[0]
+                selected_row = selected_row_df.iloc[0] # Get the single row
 
                 st.markdown(f"**Selected Record for {selected_date_for_edit_delete}:**")
                 
@@ -731,7 +731,12 @@ with tab1:
                     edit_add_on_sales = st.number_input("Edit Add-on Sales", value=float(selected_row['Add_on_Sales']), format="%.2f", key='edit_add_on_sales')
                     
                     weather_options = ['Sunny', 'Cloudy', 'Rainy', 'Snowy']
-                    edit_weather = st.selectbox("Edit Weather", weather_options, index=weather_options.index(selected_row['Weather']), key='edit_weather')
+                    # Ensure the default index for selectbox is valid
+                    try:
+                        default_weather_index = weather_options.index(selected_row['Weather'])
+                    except ValueError:
+                        default_weather_index = 0 # Default to Sunny if value not found
+                    edit_weather = st.selectbox("Edit Weather", weather_options, index=default_weather_index, key='edit_weather')
 
                     col_edit_del_btns1, col_edit_del_btns2 = st.columns(2)
                     with col_edit_del_btns1:
@@ -760,8 +765,8 @@ with tab1:
                         st.session_state.sales_model = None # Force retraining
                         st.session_state.customers_model = None
                         st.experimental_rerun()
-            else: # Fallback if selected date doesn't match a row (highly unlikely with this logic, but safe)
-                st.warning("Selected record not found. Please refresh or check data consistency.")
+            else: # This path should ideally not be hit with current logic, but as a safeguard
+                st.warning("Selected record not found in sales data for editing/deletion. Please refresh or check data consistency.")
         else: # If unique_dates_for_selectbox is empty (meaning sales_data is effectively empty for display)
             st.info("No sales data to edit or delete yet. Please add records first.")
 
