@@ -686,12 +686,13 @@ with tab1:
 
         st.subheader("Edit/Delete Records")
         if not st.session_state.sales_data.empty:
-            editable_df_for_selection = st.session_state.sales_data.copy()
-            editable_df_for_selection['Display_Date'] = editable_df_for_selection['Date'].dt.strftime('%Y-%m-%d')
+            # Generate the list for selectbox directly from unique sorted dates
+            unique_dates_for_selectbox = st.session_state.sales_data['Date'].dt.strftime('%Y-%m-%d').unique().tolist()
+            unique_dates_for_selectbox.sort(reverse=True) # Sort descending for most recent first
             
             selected_date_for_edit_delete = st.selectbox(
                 "Select a record by Date for editing or deleting:",
-                editable_df_for_selection['Display_Date'].tolist(),
+                unique_dates_for_selectbox, # Use the explicitly unique and sorted list
                 key='edit_delete_selector'
             )
 
