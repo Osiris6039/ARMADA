@@ -43,11 +43,13 @@ def load_sales_data():
     else:
         df = pd.read_csv(SALES_DATA_PATH)
         df['Date'] = pd.to_datetime(df['Date'])
-    return df.sort_values('Date').reset_index(drop=True)
+    # Ensure loaded data is always sorted and unique by date
+    return df.sort_values('Date').drop_duplicates(subset=['Date'], keep='last').reset_index(drop=True)
 
 def save_sales_data(df):
     """Saves sales data to CSV."""
-    df.sort_values('Date').to_csv(SALES_DATA_PATH, index=False)
+    # Ensure data is unique and sorted before saving
+    df.sort_values('Date').drop_duplicates(subset=['Date'], keep='last').to_csv(SALES_DATA_PATH, index=False)
     st.cache_data.clear() # Clear cache to force reload
 
 @st.cache_data
@@ -60,11 +62,13 @@ def load_events_data():
     else:
         df = pd.read_csv(EVENTS_DATA_PATH)
         df['Event_Date'] = pd.to_datetime(df['Event_Date'])
-    return df.sort_values('Event_Date').reset_index(drop=True)
+    # Ensure loaded data is always sorted and unique by event date
+    return df.sort_values('Event_Date').drop_duplicates(subset=['Event_Date'], keep='last').reset_index(drop=True)
 
 def save_events_data(df):
     """Saves events data to CSV."""
-    df.sort_values('Event_Date').to_csv(EVENTS_DATA_PATH, index=False)
+    # Ensure data is unique and sorted before saving
+    df.sort_values('Event_Date').drop_duplicates(subset=['Event_Date'], keep='last').to_csv(EVENTS_DATA_PATH, index=False)
     st.cache_data.clear() # Clear cache to force reload
 
 # --- Preprocessing for RandomForestRegressor ---
@@ -321,16 +325,16 @@ def generate_rf_forecast(sales_df, events_df, sales_model, customers_model, futu
         # Create a DataFrame for features for the current date
         current_features = pd.DataFrame([{
             'Date': forecast_date,
-            'day_of_week': forecast_date.weekday(), # FIXED: Changed from .dayofweek to .weekday()
+            'day_of_week': forecast_date.weekday(),
             'day_of_year': forecast_date.dayofyear,
             'month': forecast_date.month,
             'year': forecast_date.year,
             'week_of_year': forecast_date.isocalendar().week.astype(int),
-            'is_weekend': int(forecast_date.weekday() in [5, 6]), # FIXED: Changed from .dayofweek to .weekday()
+            'is_weekend': int(forecast_date.weekday() in [5, 6]),
             'Sales_Lag1': current_sales_lag1,
             'Customers_Lag1': current_customers_lag1,
-            'Sales_Lag7': last_7_sales[i] if i < len(last_7_sales) else 0, # Use corresponding lag from historical or previous forecast
-            'Customers_Lag7': last_7_customers[i] if i < len(last_7_customers) else 0, # Use corresponding lag from historical or previous forecast
+            'Sales_Lag7': last_7_sales[i] if i < len(last_7_sales) else 0,
+            'Customers_Lag7': last_7_customers[i] if i < len(last_7_customers) else 0,
             'is_event': 0,
             'event_impact_score': 0.0
         }])
@@ -457,6 +461,8 @@ def generate_prophet_forecast(sales_df, events_df, sales_model, customers_model,
 # --- Streamlit UI ---
 st.set_page_config(layout="wide", page_title="AI Sales & Customer Forecast App")
 
+# No custom CSS or McDonald's logo here, reverting to default Streamlit theme.
+
 st.title("🎯 AI Sales & Customer Forecast Analyst")
 st.markdown("Your 200 IQ analyst for daily sales and customer volume forecasting!")
 
@@ -568,9 +574,10 @@ with st.sidebar.form("event_input_form"):
             'Event_Name': event_name,
             'Impact': event_impact
         }])
-        # Ensure no duplicates based on date, keep new one if exists
+        # Concatenate, then deduplicate and sort immediately in session state
         st.session_state.events_data = pd.concat([st.session_state.events_data, new_event_df], ignore_index=True)
         st.session_state.events_data = st.session_state.events_data.drop_duplicates(subset=['Event_Date'], keep='last')
+        st.session_state.events_data = st.session_state.events_data.sort_values('Event_Date').reset_index(drop=True)
         save_events_data(st.session_state.events_data)
         st.sidebar.success(f"Event '{event_name}' added! AI will retrain.")
         st.session_state.sales_model = None # Force retraining
@@ -596,6 +603,7 @@ if not st.session_state.events_data.empty:
             st.session_state.events_data = st.session_state.events_data[
                 ~st.session_state.events_data['Event_Date'].dt.date.isin(dates_to_delete_dt)
             ].reset_index(drop=True)
+            st.session_state.events_data = st.session_state.events_data.sort_values('Event_Date').reset_index(drop=True) # Sort after delete
             save_events_data(st.session_state.events_data)
             st.sidebar.success("Selected events deleted! AI will retrain.")
             st.session_state.sales_model = None # Force retraining
@@ -659,7 +667,10 @@ with tab1:
                     'Add_on_Sales': add_on_sales,
                     'Weather': weather
                 }])
+                # Concatenate, then deduplicate and sort immediately in session state
                 st.session_state.sales_data = pd.concat([st.session_state.sales_data, new_record], ignore_index=True)
+                st.session_state.sales_data = st.session_state.sales_data.drop_duplicates(subset=['Date'], keep='last')
+                st.session_state.sales_data = st.session_state.sales_data.sort_values('Date').reset_index(drop=True)
                 save_sales_data(st.session_state.sales_data) # This also clears cache
                 st.success("Record added successfully! AI will retrain automatically.")
                 st.session_state.sales_model = None # Force retraining
@@ -710,6 +721,9 @@ with tab1:
                             st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_for_edit_delete),
                             ['Sales', 'Customers', 'Add_on_Sales', 'Weather']
                         ] = [edit_sales, edit_customers, edit_add_on_sales, edit_weather]
+                        # Deduplicate and sort immediately after update
+                        st.session_state.sales_data = st.session_state.sales_data.drop_duplicates(subset=['Date'], keep='last')
+                        st.session_state.sales_data = st.session_state.sales_data.sort_values('Date').reset_index(drop=True)
                         save_sales_data(st.session_state.sales_data)
                         st.success("Record updated successfully! AI will retrain.")
                         st.session_state.sales_model = None # Force retraining
@@ -719,6 +733,9 @@ with tab1:
                         st.session_state.sales_data = st.session_state.sales_data[
                             st.session_state.sales_data['Date'] != pd.to_datetime(selected_date_for_edit_delete)
                         ].reset_index(drop=True)
+                        # Deduplicate and sort immediately after delete
+                        st.session_state.sales_data = st.session_state.sales_data.drop_duplicates(subset=['Date'], keep='last')
+                        st.session_state.sales_data = st.session_state.sales_data.sort_values('Date').reset_index(drop=True)
                         save_sales_data(st.session_state.sales_data)
                         st.success("Record deleted successfully! AI will retrain.")
                         st.session_state.sales_model = None # Force retraining
