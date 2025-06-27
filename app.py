@@ -321,16 +321,16 @@ def generate_rf_forecast(sales_df, events_df, sales_model, customers_model, futu
         # Create a DataFrame for features for the current date
         current_features = pd.DataFrame([{
             'Date': forecast_date,
-            'day_of_week': forecast_date.dayofweek,
+            'day_of_week': forecast_date.weekday(),
             'day_of_year': forecast_date.dayofyear,
             'month': forecast_date.month,
             'year': forecast_date.year,
             'week_of_year': forecast_date.isocalendar().week.astype(int),
-            'is_weekend': int(forecast_date.dayofweek in [5, 6]),
+            'is_weekend': int(forecast_date.weekday() in [5, 6]),
             'Sales_Lag1': current_sales_lag1,
             'Customers_Lag1': current_customers_lag1,
-            'Sales_Lag7': last_7_sales[i] if i < len(last_7_sales) else 0, # Use corresponding lag from historical or previous forecast
-            'Customers_Lag7': last_7_customers[i] if i < len(last_7_customers) else 0, # Use corresponding lag from historical or previous forecast
+            'Sales_Lag7': last_7_sales[i] if i < len(last_7_sales) else 0,
+            'Customers_Lag7': last_7_customers[i] if i < len(last_7_customers) else 0,
             'is_event': 0,
             'event_impact_score': 0.0
         }])
@@ -456,6 +456,220 @@ def generate_prophet_forecast(sales_df, events_df, sales_model, customers_model,
 
 # --- Streamlit UI ---
 st.set_page_config(layout="wide", page_title="AI Sales & Customer Forecast App")
+
+# --- McDonald's Theme CSS ---
+st.markdown("""
+<style>
+    /* Google Fonts for a friendly, bold look */
+    @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Open+Sans:wght@400;700&display=swap');
+
+    /* Main body and text colors */
+    body {
+        font-family: 'Open Sans', sans-serif; /* A more readable font for body text */
+        color: #333; /* Dark gray for text */
+        background-color: #F8F8F8; /* Light gray background */
+    }
+
+    /* Streamlit widgets styling */
+    .stApp {
+        background-color: #F8F8F8; /* Consistent background */
+    }
+
+    /* Header styling for titles */
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Fredoka One', cursive; /* Bold, playful font for titles */
+        color: #DA291C; /* McDonald's Red */
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    }
+
+    /* Main App Title */
+    .stApp > header {
+        background-color: #FFC72C; /* McDonald's Yellow top bar */
+        padding: 1rem;
+        border-bottom: 3px solid #DA291C; /* Red border */
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    .stApp > header h1 {
+        color: #DA291C !important; /* Force red for the main title */
+        margin: 0;
+        text-align: center;
+    }
+
+    /* Sidebar styling */
+    .st-emotion-cache-1fzhx90 { /* Targeted class for sidebar background */
+        background-color: #DA291C; /* McDonald's Red sidebar */
+        color: white;
+        border-right: 3px solid #FFC72C; /* Yellow border */
+        box-shadow: 2px 0 5px rgba(0,0,0,0.2);
+    }
+    .st-emotion-cache-1fzhx90 h2, .st-emotion-cache-1fzhx90 h3 { /* Sidebar headers */
+        color: #FFC72C !important; /* Yellow for sidebar titles */
+        text-shadow: none;
+    }
+    .st-emotion-cache-1fzhx90 label { /* Sidebar labels */
+        color: white !important;
+    }
+    .st-emotion-cache-1fzhx90 .stSelectbox > div > div { /* Sidebar selectbox text */
+        color: #DA291C !important; /* Red text for selectbox options */
+    }
+    .st-emotion-cache-1fzhx90 .stDateInput > label {
+        color: white !important;
+    }
+    .st-emotion-cache-1fzhx90 .stDateInput div input {
+        color: black !important; /* Date input text color */
+    }
+
+
+    /* Buttons */
+    .stButton > button {
+        background-color: #DA291C; /* Red button background */
+        color: white;
+        border: 2px solid #FFC72C; /* Yellow border */
+        border-radius: 10px; /* Rounded corners */
+        padding: 10px 20px;
+        font-size: 16px;
+        font-weight: bold;
+        transition: all 0.2s ease-in-out;
+        box-shadow: 3px 3px 6px rgba(0,0,0,0.2);
+        cursor: pointer;
+    }
+    .stButton > button:hover {
+        background-color: #FFC72C; /* Yellow on hover */
+        color: #DA291C; /* Red text on hover */
+        border-color: #DA291C; /* Red border on hover */
+        box-shadow: 5px 5px 10px rgba(0,0,0,0.3);
+        transform: translateY(-2px);
+    }
+
+    /* Form submit buttons */
+    .st-emotion-cache-nahz7x button { /* This might need specific targeting, this is a generic form submit button */
+        background-color: #DA291C; /* Red button background */
+        color: white;
+        border: 2px solid #FFC72C; /* Yellow border */
+        border-radius: 10px; /* Rounded corners */
+        padding: 10px 20px;
+        font-size: 16px;
+        font-weight: bold;
+        transition: all 0.2s ease-in-out;
+        box-shadow: 3px 3px 6px rgba(0,0,0,0.2);
+        cursor: pointer;
+    }
+    .st-emotion-cache-nahz7x button:hover {
+        background-color: #FFC72C; /* Yellow on hover */
+        color: #DA291C; /* Red text on hover */
+        border-color: #DA291C; /* Red border on hover */
+        box-shadow: 5px 5px 10px rgba(0,0,0,0.3);
+        transform: translateY(-2px);
+    }
+
+    /* Tabs styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2px; /* Reduced gap between tabs */
+        margin-bottom: 20px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: nowrap;
+        background-color: #F0F0F0; /* Light gray for inactive tabs */
+        border-radius: 10px 10px 0 0;
+        gap: 10px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        border: 1px solid #ddd;
+        border-bottom: none;
+        transition: all 0.2s ease;
+    }
+    .stTabs [data-baseweb="tab"] div[data-testid="stMarkdownContainer"] p {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #666;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #FFE082; /* Lighter yellow on hover */
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #FFC72C; /* McDonald's Yellow for active tab */
+        border-bottom-color: #FFC72C; /* Match border to tab color */
+    }
+    .stTabs [aria-selected="true"] div[data-testid="stMarkdownContainer"] p {
+        color: #DA291C; /* McDonald's Red for active tab text */
+    }
+
+    /* Dataframes and tables */
+    .stDataFrame {
+        border: 2px solid #FFC72C; /* Yellow border for dataframes */
+        border-radius: 10px;
+        padding: 10px;
+        background-color: white; /* White background for tables */
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    /* Info/Warning/Success boxes */
+    .stAlert {
+        border-radius: 10px;
+    }
+    .stAlert > div { /* Specific targeting for the alert background */
+        background-color: #FFF3E0; /* Light orange for warnings */
+        border-left: 5px solid #FFB300; /* Darker orange bar */
+    }
+    .stAlert.success > div {
+        background-color: #E8F5E9; /* Light green for success */
+        border-left: 5px solid #4CAF50; /* Darker green bar */
+    }
+    .stAlert.warning > div {
+        background-color: #FFF3E0; /* Light orange for warnings */
+        border-left: 5px solid #FFB300; /* Darker orange bar */
+    }
+    .stAlert.info > div {
+        background-color: #E3F2FD; /* Light blue for info */
+        border-left: 5px solid #2196F3; /* Darker blue bar */
+    }
+    .stAlert.error > div {
+        background-color: #FFEBEE; /* Light red for errors */
+        border-left: 5px solid #F44336; /* Darker red bar */
+    }
+
+
+    /* Progress spinner */
+    .stSpinner > div {
+        color: #DA291C; /* Red spinner */
+    }
+
+    /* Input fields */
+    .stTextInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stDateInput > div > div > input {
+        border: 1px solid #FFC72C; /* Yellow border for inputs */
+        border-radius: 8px;
+        padding: 8px;
+        box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .stSelectbox > div > div {
+        border: 1px solid #FFC72C; /* Yellow border for selectbox */
+        border-radius: 8px;
+        box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    /* Adjust Streamlit specific classes for overall spacing and look */
+    .st-emotion-cache-z5fcl4 { /* Main content area padding */
+        padding-top: 2rem;
+        padding-right: 2rem;
+        padding-left: 2rem;
+        padding-bottom: 2rem;
+    }
+
+</style>
+""", unsafe_allow_html=True)
+
+# McDonald's Logo (Placeholder)
+st.markdown("""
+    <div style="text-align: center; margin-bottom: 20px;">
+        <img src="https://www.mcdo.com.ph/uploads/images/2020-09/Mcdo_logo_red_2.png" 
+             alt="McDonald's Logo" 
+             style="width: 150px; border-radius: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+    </div>
+    """, unsafe_allow_html=True)
+
 
 st.title("🎯 AI Sales & Customer Forecast Analyst")
 st.markdown("Your 200 IQ analyst for daily sales and customer volume forecasting!")
