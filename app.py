@@ -102,7 +102,7 @@ def preprocess_rf_data(df_sales, df_events):
     """
     if df_sales.empty:
         # Return empty dataframes/series if sales data is empty, as no features can be created
-        return pd.DataFrame(), pd.Series(), pd.Series(), pd.DataFrame()
+        return pd.DataFrame(), pd.Series(dtype='float64'), pd.Series(dtype='float64'), pd.DataFrame()
 
     df = df_sales.copy() # Work on a copy to prevent SettingWithCopyWarning
     df['Date'] = pd.to_datetime(df['Date']) # Ensure Date is datetime type
@@ -132,7 +132,7 @@ def preprocess_rf_data(df_sales, df_events):
         impact_map = {'Low': 0.1, 'Medium': 0.5, 'High': 1.0} # Map impact levels to numerical scores
         df_events_copy['Impact_Score'] = df_events_copy['Impact'].map(impact_map).fillna(0)
 
-        # Left merge: retain all sales records and add event info if available for that date
+        # Perform left merge to bring event data into the sales dataframe
         merged = pd.merge(df[['Date']], df_events_copy[['Event_Date', 'Impact_Score']],
                           left_on='Date', right_on='Event_Date', how='left')
         
@@ -211,7 +211,7 @@ def preprocess_prophet_data(df_sales, df_events, target_column):
         holidays_df = holidays_df[['ds', 'holiday']].drop_duplicates(subset=['ds']) # Ensure unique holidays by date
 
     # Select final columns for Prophet model training
-    prophet_df = df[['ds', 'y']].copy()
+    prophet_df = df[['ds', 'y']].copy() # Create a copy for prophet_df
     if target_column != 'Add_on_Sales': # Avoid circularity
         prophet_df['Add_on_Sales'] = df['Add_on_Sales'] # Add add-on sales as regressor
     
@@ -422,7 +422,7 @@ def generate_rf_forecast(sales_df, events_df, sales_model, customers_model, futu
         for col in feature_cols:
             if col not in current_features.columns:
                 current_features[col] = 0 # Add missing features with zero
-
+        
         input_for_prediction = current_features[feature_cols]
 
         # Predict sales and customers using the trained RandomForest models
@@ -583,7 +583,7 @@ if not st.session_state.get('app_initialized', False):
                 {'Event_Date': pd.to_datetime('2024-06-20'), 'Event_Name': 'Annual Fair', 'Impact': 'High'},
                 {'Event_Date': pd.to_datetime('2023-12-25'), 'Event_Name': 'Christmas Day', 'Impact': 'High'},
                 {'Event_Date': pd.to_datetime('2024-03-15'), 'Event_Name': 'Spring Festival', 'Impact': 'Medium'},
-                {'Event_Date': pd.to_datetime('2025-06-27'), 'Event_Name': 'Charter Day 2025 (Future)', 'Impact': 'High'}, # Example future event
+                {'Event_Date': pd.to_datetime('2025-06-27'), 'Event_Name': 'Charter Day 2025 (Future)', 'Impact': 'High'},
                 {'Event_Date': pd.to_datetime('2025-07-04'), 'Event_Name': 'Independence Day (Future)', 'Impact': 'Medium'},
                 {'Event_Date': pd.to_datetime('2024-07-04'), 'Event_Name': 'Independence Day 2024', 'Impact': 'Medium'},
             ])
@@ -752,28 +752,28 @@ with tab1:
         st.info("No sales data entered yet. Add records above to see them here.")
         
     st.subheader("Edit/Delete Records")
-    # This entire block is conditional on sales data existing to prevent errors
+    # Conditional block for Edit/Delete based on whether sales data exists
     if not st.session_state.sales_data.empty:
-        # Prepare the list of unique and sorted dates for the selectbox
+        # Prepare the list of unique and sorted dates for the selectbox options
         unique_dates_for_selectbox = sorted(st.session_state.sales_data['Date'].dt.strftime('%Y-%m-%d').unique().tolist(), reverse=True)
         
-        # Streamlit selectbox to choose a record
+        # Streamlit selectbox to choose a record for editing/deleting
         selected_date_str = st.selectbox(
             "Select a record by Date for editing or deleting:",
-            unique_dates_for_selectbox,
+            options=unique_dates_for_selectbox, # Use 'options' argument for clarity
             key='edit_delete_selector'
         )
 
         # Retrieve the selected row based on the chosen date string
-        # This will always find a row because unique_dates_for_selectbox is derived from existing data
+        # This is safe because 'selected_date_str' will always be one of the dates present in 'st.session_state.sales_data'
         selected_row_df = st.session_state.sales_data[
             st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_str)
         ]
-        selected_row = selected_row_df.iloc[0] # Safely access the single row
+        selected_row = selected_row_df.iloc[0] # Access the single matching row
 
         st.markdown(f"**Selected Record for {selected_date_str}:**")
         
-        with st.form("edit_delete_form", clear_on_submit=False): # Do not clear form on submit for editing
+        with st.form("edit_delete_form", clear_on_submit=False): # Form for editing/deleting
             # Populate form fields with data from the selected row
             edit_sales = st.number_input("Edit Sales", value=float(selected_row['Sales']), format="%.2f", key='edit_sales_input')
             edit_customers = st.number_input("Edit Customers", value=int(selected_row['Customers']), step=1, key='edit_customers_input')
@@ -784,7 +784,7 @@ with tab1:
             try:
                 default_weather_index = weather_options.index(selected_row['Weather'])
             except ValueError:
-                default_weather_index = 0 # Fallback to 'Sunny' if weather value is unexpected
+                default_weather_index = 0 # Fallback to 'Sunny' if weather value is unexpected or not found
             edit_weather = st.selectbox("Edit Weather", weather_options, index=default_weather_index, key='edit_weather_select')
 
             col_edit_del_btns1, col_edit_del_btns2 = st.columns(2)
@@ -794,7 +794,7 @@ with tab1:
                 delete_button = st.form_submit_button("Delete Record")
 
             if update_button:
-                # Update the record in session state data
+                # Logic to update the record in session state data
                 st.session_state.sales_data.loc[
                     st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_str),
                     ['Sales', 'Customers', 'Add_on_Sales', 'Weather']
@@ -802,11 +802,11 @@ with tab1:
                 save_sales_data(st.session_state.sales_data) # Save updated data to disk
                 st.session_state.sales_data = load_sales_data() # Reload clean data into session state
                 st.success("Record updated successfully! AI will retrain.")
-                st.session_state.sales_model = None # Invalidate models
+                st.session_state.sales_model = None # Invalidate models to force retraining
                 st.session_state.customers_model = None
                 st.experimental_rerun() # Rerun to display updated data and trigger model retraining
             elif delete_button:
-                # Delete the record from session state data
+                # Logic to delete the record from session state data
                 st.session_state.sales_data = st.session_state.sales_data[
                     st.session_state.sales_data['Date'] != pd.to_datetime(selected_date_str)
                 ].reset_index(drop=True)
@@ -816,7 +816,7 @@ with tab1:
                 st.session_state.sales_model = None # Invalidate models
                 st.session_state.customers_model = None
                 st.experimental_rerun() # Rerun to update UI and trigger model retraining
-    else: # This else corresponds directly to 'if not st.session_state.sales_data.empty:' for the entire edit/delete section
+    else: # This 'else' now clearly pairs with 'if not st.session_state.sales_data.empty:' for this entire section
         st.info("No sales data to edit or delete yet. Please add records first via the 'Add New Daily Record' section.")
 
 
@@ -1070,4 +1070,3 @@ with tab3:
             st.error("AI models are not ready. Please ensure you have sufficient data and the models are trained first.")
     else:
         st.info("Click 'Calculate Accuracy' to see how well the AI performs on past data.")
-
