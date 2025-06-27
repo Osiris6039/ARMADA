@@ -247,38 +247,52 @@ def load_or_train_models(model_type, n_estimators_rf=100):
         sales_model_path = SALES_RF_MODEL_PATH
         customers_model_path = CUSTOMERS_RF_MODEL_PATH
         
-        X, y_sales, y_customers, _ = preprocess_rf_data(sales_df_current, events_df_current)
-
-        if os.path.exists(sales_model_path) and os.path.exists(customers_model_path):
-            try:
-                sales_model = joblib.load(sales_model_path)
-                customers_model = joblib.load(customers_model_path)
-                st.info("RandomForest models loaded from disk.")
-            except Exception as e:
-                st.error(f"Error loading RandomForest models: {e}. Retraining.")
-                sales_model, customers_model = train_random_forest_models(X, y_sales, y_customers, n_estimators_rf)
+        # Only attempt preprocessing and training if sales_df_current is not empty
+        if not sales_df_current.empty:
+            X, y_sales, y_customers, _ = preprocess_rf_data(sales_df_current, events_df_current)
+            if not X.empty: # Ensure X is not empty after preprocessing
+                if os.path.exists(sales_model_path) and os.path.exists(customers_model_path):
+                    try:
+                        sales_model = joblib.load(sales_model_path)
+                        customers_model = joblib.load(customers_model_path)
+                        st.info("RandomForest models loaded from disk.")
+                    except Exception as e:
+                        st.error(f"Error loading RandomForest models: {e}. Retraining.")
+                        sales_model, customers_model = train_random_forest_models(X, y_sales, y_customers, n_estimators_rf)
+                else:
+                    st.info("No RandomForest models found. Training AI models...")
+                    sales_model, customers_model = train_random_forest_models(X, y_sales, y_customers, n_estimators_rf)
+            else:
+                st.info("Not enough valid data after preprocessing for RandomForest training.")
         else:
-            st.info("No RandomForest models found. Training AI models...")
-            sales_model, customers_model = train_random_forest_models(X, y_sales, y_customers, n_estimators_rf)
+            st.info("No sales data available to train RandomForest models.")
+
 
     elif model_type == "Prophet":
         sales_model_path = SALES_PROPHET_MODEL_PATH
         customers_model_path = CUSTOMERS_PROPHET_MODEL_PATH
 
-        prophet_sales_df, holidays_df = preprocess_prophet_data(sales_df_current, events_df_current, 'Sales')
-        prophet_customers_df, _ = preprocess_prophet_data(sales_df_current, events_df_current, 'Customers')
+        # Only attempt preprocessing and training if sales_df_current is not empty
+        if not sales_df_current.empty:
+            prophet_sales_df, holidays_df = preprocess_prophet_data(sales_df_current, events_df_current, 'Sales')
+            prophet_customers_df, _ = preprocess_prophet_data(sales_df_current, events_df_current, 'Customers')
 
-        if os.path.exists(sales_model_path) and os.path.exists(customers_model_path):
-            try:
-                sales_model = joblib.load(sales_model_path)
-                customers_model = joblib.load(customers_model_path)
-                st.info("Prophet models loaded from disk.")
-            except Exception as e:
-                st.error(f"Error loading Prophet models: {e}. Retraining.")
-                sales_model, customers_model = train_prophet_models(prophet_sales_df, prophet_customers_df, holidays_df)
+            if not prophet_sales_df.empty and not prophet_customers_df.empty: # Ensure data is not empty after preprocessing
+                if os.path.exists(sales_model_path) and os.path.exists(customers_model_path):
+                    try:
+                        sales_model = joblib.load(sales_model_path)
+                        customers_model = joblib.load(customers_model_path)
+                        st.info("Prophet models loaded from disk.")
+                    except Exception as e:
+                        st.error(f"Error loading Prophet models: {e}. Retraining.")
+                        sales_model, customers_model = train_prophet_models(prophet_sales_df, prophet_customers_df, holidays_df)
+                else:
+                    st.info("No Prophet models found. Training AI models...")
+                    sales_model, customers_model = train_prophet_models(prophet_sales_df, prophet_customers_df, holidays_df)
+            else:
+                st.info("Not enough valid data after preprocessing for Prophet training.")
         else:
-            st.info("No Prophet models found. Training AI models...")
-            sales_model, customers_model = train_prophet_models(prophet_sales_df, prophet_customers_df, holidays_df)
+            st.info("No sales data available to train Prophet models.")
 
     return sales_model, customers_model
 
@@ -303,6 +317,7 @@ def generate_rf_forecast(sales_df, events_df, sales_model, customers_model, futu
     forecast_results = []
     
     # Initialize lag values from the end of actual historical data
+    # Ensure there's data before trying to access iloc[-1]
     current_sales_lag1 = historical_data_for_lags['Sales'].iloc[-1] if not historical_data_for_lags.empty else 0
     current_customers_lag1 = historical_data_for_lags['Customers'].iloc[-1] if not historical_data_for_lags.empty else 0
     
@@ -483,7 +498,9 @@ def create_sample_data_if_empty():
 
     if sales_df_check.empty:
         st.info("Creating sample sales data for a quick start...")
-        dates = pd.to_datetime(pd.date_range(end=datetime.now(), periods=60, freq='D')) # More data
+        # Start date for sample data: 60 days ago from today
+        start_date_for_sample = datetime.now() - timedelta(days=60)
+        dates = pd.to_datetime(pd.date_range(start=start_date_for_sample, periods=60, freq='D'))
         np.random.seed(42)
         sales = np.random.randint(500, 1500, size=len(dates)) + np.random.randn(len(dates)) * 50
         customers = np.random.randint(50, 200, size=len(dates)) + np.random.randn(len(dates)) * 10
@@ -679,6 +696,7 @@ with tab1:
     st.subheader("Last 7 Days of Inputs")
     if not st.session_state.sales_data.empty:
         # Ensure the data displayed here is also deduplicated and sorted by date
+        # Sort by date before tail() to get the latest 7 unique days correctly
         display_data = st.session_state.sales_data.sort_values('Date').drop_duplicates(subset=['Date'], keep='last').tail(7).copy()
         display_data['Date'] = display_data['Date'].dt.strftime('%Y-%m-%d')
         st.dataframe(display_data.sort_values('Date', ascending=False)) # Display latest 7 at top
@@ -695,50 +713,59 @@ with tab1:
                 key='edit_delete_selector'
             )
 
-            if selected_date_for_edit_delete:
-                selected_row = st.session_state.sales_data[
+            # Only attempt to access selected_row if a date is actually selected and sales_data is not empty
+            if selected_date_for_edit_delete and not st.session_state.sales_data.empty:
+                # Use .head(1) to safely get the first (and should be only) matching row,
+                # then check if it's not empty before accessing iloc[0]
+                selected_row_df = st.session_state.sales_data[
                     st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_for_edit_delete)
-                ].iloc[0]
+                ]
+                if not selected_row_df.empty:
+                    selected_row = selected_row_df.iloc[0]
 
-                st.markdown(f"**Selected Record for {selected_date_for_edit_delete}:**")
-                
-                with st.form("edit_delete_form"):
-                    edit_sales = st.number_input("Edit Sales", value=float(selected_row['Sales']), format="%.2f", key='edit_sales')
-                    edit_customers = st.number_input("Edit Customers", value=int(selected_row['Customers']), step=1, key='edit_customers')
-                    edit_add_on_sales = st.number_input("Edit Add-on Sales", value=float(selected_row['Add_on_Sales']), format="%.2f", key='edit_add_on_sales')
+                    st.markdown(f"**Selected Record for {selected_date_for_edit_delete}:**")
                     
-                    weather_options = ['Sunny', 'Cloudy', 'Rainy', 'Snowy']
-                    edit_weather = st.selectbox("Edit Weather", weather_options, index=weather_options.index(selected_row['Weather']), key='edit_weather')
+                    with st.form("edit_delete_form"):
+                        edit_sales = st.number_input("Edit Sales", value=float(selected_row['Sales']), format="%.2f", key='edit_sales')
+                        edit_customers = st.number_input("Edit Customers", value=int(selected_row['Customers']), step=1, key='edit_customers')
+                        edit_add_on_sales = st.number_input("Edit Add-on Sales", value=float(selected_row['Add_on_Sales']), format="%.2f", key='edit_add_on_sales')
+                        
+                        weather_options = ['Sunny', 'Cloudy', 'Rainy', 'Snowy']
+                        edit_weather = st.selectbox("Edit Weather", weather_options, index=weather_options.index(selected_row['Weather']), key='edit_weather')
 
-                    col_edit_del_btns1, col_edit_del_btns2 = st.columns(2)
-                    with col_edit_del_btns1:
-                        update_button = st.form_submit_button("Update Record")
-                    with col_edit_del_btns2:
-                        delete_button = st.form_submit_button("Delete Record")
+                        col_edit_del_btns1, col_edit_del_btns2 = st.columns(2)
+                        with col_edit_del_btns1:
+                            update_button = st.form_submit_button("Update Record")
+                        with col_edit_del_btns2:
+                            delete_button = st.form_submit_button("Delete Record")
 
-                    if update_button:
-                        st.session_state.sales_data.loc[
-                            st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_for_edit_delete),
-                            ['Sales', 'Customers', 'Add_on_Sales', 'Weather']
-                        ] = [edit_sales, edit_customers, edit_add_on_sales, edit_weather]
-                        save_sales_data(st.session_state.sales_data) # Save updated data
-                        st.session_state.sales_data = load_sales_data() # Reload clean data
-                        st.success("Record updated successfully! AI will retrain.")
-                        st.session_state.sales_model = None # Force retraining
-                        st.session_state.customers_model = None
-                        st.experimental_rerun()
-                    elif delete_button:
-                        st.session_state.sales_data = st.session_state.sales_data[
-                            st.session_state.sales_data['Date'] != pd.to_datetime(selected_date_for_edit_delete)
-                        ].reset_index(drop=True)
-                        save_sales_data(st.session_state.sales_data) # Save deleted data
-                        st.session_state.sales_data = load_sales_data() # Reload clean data
-                        st.success("Record deleted successfully! AI will retrain.")
-                        st.session_state.sales_model = None # Force retraining
-                        st.session_state.customers_model = None
-                        st.experimental_rerun()
-        else:
-            st.info("No sales data to edit or delete yet.")
+                        if update_button:
+                            st.session_state.sales_data.loc[
+                                st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_for_edit_delete),
+                                ['Sales', 'Customers', 'Add_on_Sales', 'Weather']
+                            ] = [edit_sales, edit_customers, edit_add_on_sales, edit_weather]
+                            save_sales_data(st.session_state.sales_data) # Save updated data
+                            st.session_state.sales_data = load_sales_data() # Reload clean data
+                            st.success("Record updated successfully! AI will retrain.")
+                            st.session_state.sales_model = None # Force retraining
+                            st.session_state.customers_model = None
+                            st.experimental_rerun()
+                        elif delete_button:
+                            st.session_state.sales_data = st.session_state.sales_data[
+                                st.session_state.sales_data['Date'] != pd.to_datetime(selected_date_for_edit_delete)
+                            ].reset_index(drop=True)
+                            save_sales_data(st.session_state.sales_data) # Save deleted data
+                            st.session_state.sales_data = load_sales_data() # Reload clean data
+                            st.success("Record deleted successfully! AI will retrain.")
+                            st.session_state.sales_model = None # Force retraining
+                            st.session_state.customers_model = None
+                            st.experimental_rerun()
+                else:
+                    st.warning("Selected date not found in sales data for editing. This might be a transient state.")
+            elif not unique_dates_for_selectbox: # If the selectbox itself is empty
+                st.info("No sales data to edit or delete yet. Please add records first.")
+        else: # If sales_data is empty initially
+            st.info("No sales data to edit or delete yet. Please add records first.")
 
     else:
         st.info("No sales data entered yet.")
@@ -781,7 +808,9 @@ with tab2:
     if st.button("Generate 10-Day Forecast", key='generate_forecast_btn'):
         if st.session_state.sales_data.empty or st.session_state.sales_data.shape[0] < 2:
             st.warning("Please enter at least 2 days of sales data to generate a meaningful forecast.")
-        elif st.session_state.sales_model and st.session_state.customers_model:
+        elif st.session_state.sales_model is None or st.session_state.customers_model is None: # Check if models are actually loaded/trained
+             st.warning("AI models are not yet trained or loaded. Please ensure you have sufficient data and select a model type.")
+        else:
             with st.spinner(f"Generating forecast using {st.session_state.model_type}... This might take a moment as the AI thinks ahead!"):
                 if st.session_state.model_type == "RandomForest":
                     forecast_df = generate_rf_forecast(
@@ -801,8 +830,6 @@ with tab2:
                     )
                 st.session_state.forecast_df = forecast_df
                 st.success("Forecast generated!")
-        else:
-            st.error("AI models are not ready. Please ensure you have sufficient data and the models are trained.")
     
     if 'forecast_df' in st.session_state and not st.session_state.forecast_df.empty:
         st.subheader("Forecasted Data (with 95% Confidence Interval)")
@@ -871,7 +898,9 @@ with tab3:
             st.warning("No sales data available to calculate accuracy.")
         elif st.session_state.sales_data.shape[0] < 2:
             st.warning("Please enter at least 2 days of sales data to calculate accuracy.")
-        elif st.session_state.sales_model and st.session_state.customers_model:
+        elif st.session_state.sales_model is None or st.session_state.customers_model is None:
+             st.warning("AI models are not yet trained or loaded. Please ensure you have sufficient data and select a model type.")
+        else:
             with st.spinner(f"Calculating accuracy using {st.session_state.model_type}..."):
                 if st.session_state.model_type == "RandomForest":
                     X_hist, y_sales_hist, y_customers_hist, _ = preprocess_rf_data(st.session_state.sales_data, st.session_state.events_data)
@@ -991,4 +1020,3 @@ with tab3:
             st.error("AI models are not ready. Please ensure you have sufficient data and the models are trained first.")
     else:
         st.info("Click 'Calculate Accuracy' to see how well the AI performs on past data.")
-
