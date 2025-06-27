@@ -527,7 +527,7 @@ if 'app_initialized' not in st.session_state:
 # --- Initial Sample Data Creation (Run once if files don't exist) ---
 # This block runs only once when 'app_initialized' is False
 if not st.session_state.get('app_initialized', False):
-    def create_sample_data_if_empty():
+    def create_sample_data_if_empty_and_initialize_state():
         sales_df_check = load_sales_data()
         events_df_check = load_events_data()
 
@@ -580,7 +580,7 @@ if not st.session_state.get('app_initialized', False):
         st.session_state['app_initialized'] = True # Mark as initialized
         st.experimental_rerun() # Rerun to ensure all components use newly loaded data
     
-    create_sample_data_if_empty()
+    create_sample_data_if_empty_and_initialize_state()
 
 
 # --- Sidebar for Model Settings and Event Logger ---
@@ -729,76 +729,71 @@ with tab1:
         display_data = st.session_state.sales_data.sort_values('Date').drop_duplicates(subset=['Date'], keep='last').tail(7).copy()
         display_data['Date'] = display_data['Date'].dt.strftime('%Y-%m-%d')
         st.dataframe(display_data.sort_values('Date', ascending=False)) # Display latest 7 at top
-        
-        st.subheader("Edit/Delete Records")
-        # Prepare the list for the selectbox first, ensuring it's always from the clean data
-        # Only create the selectbox if there are dates to select
-        if not st.session_state.sales_data.empty:
-            unique_dates_for_selectbox = sorted(st.session_state.sales_data['Date'].dt.strftime('%Y-%m-%d').unique().tolist(), reverse=True)
-            
-            selected_date_for_edit_delete = st.selectbox(
-                "Select a record by Date for editing or deleting:",
-                unique_dates_for_selectbox,
-                key='edit_delete_selector'
-            )
-
-            # Retrieve the selected row using the selected date string
-            selected_row_df = st.session_state.sales_data[
-                st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_for_edit_delete)
-            ]
-            
-            # This check ensures we have a valid row to work with
-            if not selected_row_df.empty: 
-                selected_row = selected_row_df.iloc[0]
-
-                st.markdown(f"**Selected Record for {selected_date_for_edit_delete}:**")
-                
-                with st.form("edit_delete_form"):
-                    edit_sales = st.number_input("Edit Sales", value=float(selected_row['Sales']), format="%.2f", key='edit_sales')
-                    edit_customers = st.number_input("Edit Customers", value=int(selected_row['Customers']), step=1, key='edit_customers')
-                    edit_add_on_sales = st.number_input("Edit Add-on Sales", value=float(selected_row['Add_on_Sales']), format="%.2f", key='edit_add_on_sales')
-                    
-                    weather_options = ['Sunny', 'Cloudy', 'Rainy', 'Snowy']
-                    # Ensure the default index for selectbox is valid
-                    try:
-                        default_weather_index = weather_options.index(selected_row['Weather'])
-                    except ValueError:
-                        default_weather_index = 0 # Default to Sunny if value not found
-                    edit_weather = st.selectbox("Edit Weather", weather_options, index=default_weather_index, key='edit_weather')
-
-                    col_edit_del_btns1, col_edit_del_btns2 = st.columns(2)
-                    with col_edit_del_btns1:
-                        update_button = st.form_submit_button("Update Record")
-                    with col_edit_del_btns2:
-                        delete_button = st.form_submit_button("Delete Record")
-
-                    if update_button:
-                        st.session_state.sales_data.loc[
-                            st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_for_edit_delete),
-                            ['Sales', 'Customers', 'Add_on_Sales', 'Weather']
-                        ] = [edit_sales, edit_customers, edit_add_on_sales, edit_weather]
-                        save_sales_data(st.session_state.sales_data)
-                        st.session_state.sales_data = load_sales_data() # Reload clean data
-                        st.success("Record updated successfully! AI will retrain.")
-                        st.session_state.sales_model = None
-                        st.session_state.customers_model = None
-                        st.experimental_rerun()
-                    elif delete_button:
-                        st.session_state.sales_data = st.session_state.sales_data[
-                            st.session_state.sales_data['Date'] != pd.to_datetime(selected_date_for_edit_delete)
-                        ].reset_index(drop=True)
-                        save_sales_data(st.session_state.sales_data)
-                        st.session_state.sales_data = load_sales_data() # Reload clean data
-                        st.success("Record deleted successfully! AI will retrain.")
-                        st.session_state.sales_model = None
-                        st.session_state.customers_model = None
-                        st.experimental_rerun()
-            else: # Fallback if selected date somehow doesn't correspond to data (highly unlikely but for robustness)
-                st.warning("Selected record data not found. Please refresh the page.")
-        else: # If sales_data is empty, inform the user
-            st.info("No sales data to edit or delete yet. Please add records first.")
-    else: # If sales_data is empty initially at this higher level
+    else:
         st.info("No sales data entered yet.")
+        
+    st.subheader("Edit/Delete Records")
+    # This block handles displaying the selectbox and the edit/delete form
+    # It now has a single, clear conditional flow
+    if not st.session_state.sales_data.empty:
+        unique_dates_for_selectbox = sorted(st.session_state.sales_data['Date'].dt.strftime('%Y-%m-%d').unique().tolist(), reverse=True)
+        
+        selected_date_for_edit_delete = st.selectbox(
+            "Select a record by Date for editing or deleting:",
+            unique_dates_for_selectbox,
+            key='edit_delete_selector'
+        )
+
+        # Retrieve the selected row using the selected date string
+        # This check is now safer because selected_date_for_edit_delete is guaranteed to be in unique_dates_for_selectbox
+        selected_row_df = st.session_state.sales_data[
+            st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_for_edit_delete)
+        ]
+        selected_row = selected_row_df.iloc[0] # No need for 'if not selected_row_df.empty' as it should always find it now
+
+        st.markdown(f"**Selected Record for {selected_date_for_edit_delete}:**")
+        
+        with st.form("edit_delete_form"):
+            edit_sales = st.number_input("Edit Sales", value=float(selected_row['Sales']), format="%.2f", key='edit_sales')
+            edit_customers = st.number_input("Edit Customers", value=int(selected_row['Customers']), step=1, key='edit_customers')
+            edit_add_on_sales = st.number_input("Edit Add-on Sales", value=float(selected_row['Add_on_Sales']), format="%.2f", key='edit_add_on_sales')
+            
+            weather_options = ['Sunny', 'Cloudy', 'Rainy', 'Snowy']
+            try:
+                default_weather_index = weather_options.index(selected_row['Weather'])
+            except ValueError:
+                default_weather_index = 0 # Default to Sunny if value not found
+            edit_weather = st.selectbox("Edit Weather", weather_options, index=default_weather_index, key='edit_weather')
+
+            col_edit_del_btns1, col_edit_del_btns2 = st.columns(2)
+            with col_edit_del_btns1:
+                update_button = st.form_submit_button("Update Record")
+            with col_edit_del_btns2:
+                delete_button = st.form_submit_button("Delete Record")
+
+            if update_button:
+                st.session_state.sales_data.loc[
+                    st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_for_edit_delete),
+                    ['Sales', 'Customers', 'Add_on_Sales', 'Weather']
+                ] = [edit_sales, edit_customers, edit_add_on_sales, edit_weather]
+                save_sales_data(st.session_state.sales_data)
+                st.session_state.sales_data = load_sales_data()
+                st.success("Record updated successfully! AI will retrain.")
+                st.session_state.sales_model = None
+                st.session_state.customers_model = None
+                st.experimental_rerun()
+            elif delete_button:
+                st.session_state.sales_data = st.session_state.sales_data[
+                    st.session_state.sales_data['Date'] != pd.to_datetime(selected_date_for_edit_delete)
+                ].reset_index(drop=True)
+                save_sales_data(st.session_state.sales_data)
+                st.session_state.sales_data = load_sales_data()
+                st.success("Record deleted successfully! AI will retrain.")
+                st.session_state.sales_model = None
+                st.session_state.customers_model = None
+                st.experimental_rerun()
+    else: # This else now directly corresponds to 'if not st.session_state.sales_data.empty:'
+        st.info("No sales data to edit or delete yet. Please add records first.")
 
 
 with tab2:
