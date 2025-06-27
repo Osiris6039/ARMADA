@@ -2,9 +2,10 @@ streamlit==1.36.0
 pandas==2.2.2
 scikit-learn==1.5.0
 numpy==1.26.4
+cython==3.0.10 # Added Cython explicitly
 joblib==1.4.2
 openpyxl==3.1.5
 matplotlib==3.9.0
 seaborn==0.13.2
-prophet==1.1.0 # Added for Prophet model
-pystan==2.19.1.1 # Dependency for Prophet
+prophet==1.1.0
+# Removed pystan, letting prophet manage its dependency
