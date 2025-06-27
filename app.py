@@ -461,8 +461,6 @@ def generate_prophet_forecast(sales_df, events_df, sales_model, customers_model,
 # --- Streamlit UI ---
 st.set_page_config(layout="wide", page_title="AI Sales & Customer Forecast App")
 
-# No custom CSS or McDonald's logo here, reverting to default Streamlit theme.
-
 st.title("🎯 AI Sales & Customer Forecast Analyst")
 st.markdown("Your 200 IQ analyst for daily sales and customer volume forecasting!")
 
@@ -513,7 +511,7 @@ def create_sample_data_if_empty():
             'Weather': weather
         })
         save_sales_data(sample_sales_df)
-        st.session_state.sales_data = sample_sales_df
+        st.session_state.sales_data = load_sales_data() # Ensure session state is also clean after sample data creation
         
     if events_df_check.empty:
         st.info("Creating sample event data...")
@@ -526,7 +524,7 @@ def create_sample_data_if_empty():
             {'Event_Date': pd.to_datetime('2024-07-04'), 'Event_Name': 'Independence Day 2024', 'Impact': 'Medium'},
         ])
         save_events_data(sample_events_df)
-        st.session_state.events_data = sample_events_df
+        st.session_state.events_data = load_events_data() # Ensure session state is also clean after sample data creation
         st.success("Sample data created!")
         st.experimental_rerun() # Rerun to load initial data into session state
 
@@ -574,11 +572,11 @@ with st.sidebar.form("event_input_form"):
             'Event_Name': event_name,
             'Impact': event_impact
         }])
-        # Concatenate, then deduplicate and sort immediately in session state
+        # Concatenate and save to CSV (which handles deduplication and sorting during save)
         st.session_state.events_data = pd.concat([st.session_state.events_data, new_event_df], ignore_index=True)
-        st.session_state.events_data = st.session_state.events_data.drop_duplicates(subset=['Event_Date'], keep='last')
-        st.session_state.events_data = st.session_state.events_data.sort_values('Event_Date').reset_index(drop=True)
         save_events_data(st.session_state.events_data)
+        # Immediately reload the clean data into session state
+        st.session_state.events_data = load_events_data()
         st.sidebar.success(f"Event '{event_name}' added! AI will retrain.")
         st.session_state.sales_model = None # Force retraining
         st.session_state.customers_model = None
@@ -603,8 +601,8 @@ if not st.session_state.events_data.empty:
             st.session_state.events_data = st.session_state.events_data[
                 ~st.session_state.events_data['Event_Date'].dt.date.isin(dates_to_delete_dt)
             ].reset_index(drop=True)
-            st.session_state.events_data = st.session_state.events_data.sort_values('Event_Date').reset_index(drop=True) # Sort after delete
             save_events_data(st.session_state.events_data)
+            st.session_state.events_data = load_events_data() # Reload clean data
             st.sidebar.success("Selected events deleted! AI will retrain.")
             st.session_state.sales_model = None # Force retraining
             st.session_state.customers_model = None
@@ -667,11 +665,11 @@ with tab1:
                     'Add_on_Sales': add_on_sales,
                     'Weather': weather
                 }])
-                # Concatenate, then deduplicate and sort immediately in session state
+                # Concatenate and save to CSV (which handles deduplication and sorting during save)
                 st.session_state.sales_data = pd.concat([st.session_state.sales_data, new_record], ignore_index=True)
-                st.session_state.sales_data = st.session_state.sales_data.drop_duplicates(subset=['Date'], keep='last')
-                st.session_state.sales_data = st.session_state.sales_data.sort_values('Date').reset_index(drop=True)
-                save_sales_data(st.session_state.sales_data) # This also clears cache
+                save_sales_data(st.session_state.sales_data)
+                # Immediately reload the clean data into session state
+                st.session_state.sales_data = load_sales_data()
                 st.success("Record added successfully! AI will retrain automatically.")
                 st.session_state.sales_model = None # Force retraining
                 st.session_state.customers_model = None
@@ -680,13 +678,14 @@ with tab1:
 
     st.subheader("Last 7 Days of Inputs")
     if not st.session_state.sales_data.empty:
-        last_7_days_display = st.session_state.sales_data.tail(7).sort_values('Date', ascending=False).copy()
-        last_7_days_display['Date'] = last_7_days_display['Date'].dt.strftime('%Y-%m-%d')
-        st.dataframe(last_7_days_display)
-
+        # Ensure the data displayed here is also deduplicated and sorted by date
+        display_data = st.session_state.sales_data.sort_values('Date').drop_duplicates(subset=['Date'], keep='last').tail(7).copy()
+        display_data['Date'] = display_data['Date'].dt.strftime('%Y-%m-%d')
+        st.dataframe(display_data.sort_values('Date', ascending=False)) # Display latest 7 at top
+        
         st.subheader("Edit/Delete Records")
         if not st.session_state.sales_data.empty:
-            # Generate the list for selectbox directly from unique sorted dates
+            # Generate the list for selectbox directly from unique sorted dates from the clean data
             unique_dates_for_selectbox = st.session_state.sales_data['Date'].dt.strftime('%Y-%m-%d').unique().tolist()
             unique_dates_for_selectbox.sort(reverse=True) # Sort descending for most recent first
             
@@ -722,10 +721,8 @@ with tab1:
                             st.session_state.sales_data['Date'] == pd.to_datetime(selected_date_for_edit_delete),
                             ['Sales', 'Customers', 'Add_on_Sales', 'Weather']
                         ] = [edit_sales, edit_customers, edit_add_on_sales, edit_weather]
-                        # Deduplicate and sort immediately after update
-                        st.session_state.sales_data = st.session_state.sales_data.drop_duplicates(subset=['Date'], keep='last')
-                        st.session_state.sales_data = st.session_state.sales_data.sort_values('Date').reset_index(drop=True)
-                        save_sales_data(st.session_state.sales_data)
+                        save_sales_data(st.session_state.sales_data) # Save updated data
+                        st.session_state.sales_data = load_sales_data() # Reload clean data
                         st.success("Record updated successfully! AI will retrain.")
                         st.session_state.sales_model = None # Force retraining
                         st.session_state.customers_model = None
@@ -734,10 +731,8 @@ with tab1:
                         st.session_state.sales_data = st.session_state.sales_data[
                             st.session_state.sales_data['Date'] != pd.to_datetime(selected_date_for_edit_delete)
                         ].reset_index(drop=True)
-                        # Deduplicate and sort immediately after delete
-                        st.session_state.sales_data = st.session_state.sales_data.drop_duplicates(subset=['Date'], keep='last')
-                        st.session_state.sales_data = st.session_state.sales_data.sort_values('Date').reset_index(drop=True)
-                        save_sales_data(st.session_state.sales_data)
+                        save_sales_data(st.session_state.sales_data) # Save deleted data
+                        st.session_state.sales_data = load_sales_data() # Reload clean data
                         st.success("Record deleted successfully! AI will retrain.")
                         st.session_state.sales_model = None # Force retraining
                         st.session_state.customers_model = None
