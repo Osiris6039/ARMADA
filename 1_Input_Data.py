@@ -1,1 +1,0 @@
-# Streamlit page for daily input
